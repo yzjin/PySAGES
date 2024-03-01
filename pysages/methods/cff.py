@@ -21,7 +21,7 @@ from jax.lax import cond
 
 from pysages.approxfun import compute_mesh
 from pysages.approxfun import scale as _scale
-from pysages.grids import build_indexer
+from pysages.grids import build_indexer, grid_transposer
 from pysages.methods.core import NNSamplingMethod, Result, generalize
 from pysages.methods.restraints import apply_restraints
 from pysages.methods.utils import numpyfy_vals
@@ -31,7 +31,7 @@ from pysages.ml.optimizers import LevenbergMarquardt
 from pysages.ml.training import NNData, build_fitting_function, convolve, normalize
 from pysages.ml.utils import blackman_kernel, pack, unpack
 from pysages.typing import JaxArray, NamedTuple, Tuple
-from pysages.utils import dispatch, solve_pos_def
+from pysages.utils import dispatch, first_or_all, solve_pos_def
 
 # Aliases
 f32 = np.float32
@@ -77,8 +77,8 @@ class CFFState(NamedTuple):
     nn: NNDada
         Bundle of the neural network parameters, and output scaling coefficients.
 
-    nstep: int
-        Count the number of times the method's update has been called.
+    ncalls: int
+        Counts the number of times the method's update has been called.
     """
 
     xi: JaxArray
@@ -93,7 +93,7 @@ class CFFState(NamedTuple):
     Wp_: JaxArray
     nn: NNData
     fnn: NNData
-    nstep: int
+    ncalls: int
 
     def __repr__(self):
         return repr("PySAGES " + type(self).__name__)
@@ -209,13 +209,13 @@ def _cff(method: CFF, snapshot, helpers):
         nn = NNData(ps, np.array(0.0), np.array(1.0))
         fnn = NNData(fps, np.zeros(dims), np.array(1.0))
 
-        return CFFState(xi, bias, hist, histp, prob, fe, Fsum, force, Wp, Wp_, nn, fnn, 1)
+        return CFFState(xi, bias, hist, histp, prob, fe, Fsum, force, Wp, Wp_, nn, fnn, 0)
 
     def update(state, data):
         # During the intial stage, when there are not enough collected samples, use ABF
-        nstep = state.nstep
-        in_training_regime = nstep > 1 * train_freq
-        in_training_step = in_training_regime & (nstep % train_freq == 1)
+        ncalls = state.ncalls + 1
+        in_training_regime = ncalls > train_freq
+        in_training_step = in_training_regime & (ncalls % train_freq == 1)
         histp, fe, prob, nn, fnn = learn_free_energy(state, in_training_step)
         # Compute the collective variable and its jacobian
         xi, Jxi = cv(data)
@@ -232,9 +232,7 @@ def _cff(method: CFF, snapshot, helpers):
         force = estimate_force(PartialCFFState(xi, hist, Fsum, I_xi, fnn, in_training_regime))
         bias = (-Jxi.T @ force).reshape(state.bias.shape)
         #
-        return CFFState(
-            xi, bias, hist, histp, prob, fe, Fsum, force, Wp, state.Wp, nn, fnn, nstep + 1
-        )
+        return CFFState(xi, bias, hist, histp, prob, fe, Fsum, force, Wp, state.Wp, nn, fnn, ncalls)
 
     return snapshot, initialize, generalize(update, helpers)
 
@@ -390,9 +388,6 @@ def analyze(result: Result[CFF]):
 
         return jit(fes_fn)
 
-    def first_or_all(seq):
-        return seq[0] if len(seq) == 1 else seq
-
     histograms = []
     mean_forces = []
     free_energies = []
@@ -400,21 +395,26 @@ def analyze(result: Result[CFF]):
     fnns = []
     fes_fns = []
 
+    # We transpose the data for convenience when plotting
+    transpose = grid_transposer(grid)
+    d = mesh.shape[-1]
+
     for s in states:
-        histograms.append(s.hist)
-        mean_forces.append(average_forces(s.hist, s.Fsum))
-        free_energies.append(s.fe.max() - s.fe)
+        histograms.append(transpose(s.hist))
+        mean_forces.append(transpose(average_forces(s.hist, s.Fsum)))
+        free_energies.append(transpose(s.fe.max() - s.fe))
         nns.append(s.nn)
         fnns.append(s.fnn)
         fes_fns.append(build_fes_fn(s.nn))
 
-    ana_result = dict(
-        histogram=first_or_all(histograms),
-        mean_force=first_or_all(mean_forces),
-        free_energy=first_or_all(free_energies),
-        mesh=mesh,
-        nn=first_or_all(nns),
-        fnn=first_or_all(fnns),
-        fes_fn=first_or_all(fes_fns),
-    )
+    ana_result = {
+        "histogram": first_or_all(histograms),
+        "mean_force": first_or_all(mean_forces),
+        "free_energy": first_or_all(free_energies),
+        "mesh": transpose(mesh).reshape(-1, d).squeeze(),
+        "nn": first_or_all(nns),
+        "fnn": first_or_all(fnns),
+        "fes_fn": first_or_all(fes_fns),
+    }
+
     return numpyfy_vals(ana_result)
