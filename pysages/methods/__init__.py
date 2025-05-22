@@ -66,6 +66,8 @@ from .cff import CFF
 from .core import SamplingMethod
 from .ffs import FFS
 from .funn import FUNN
+from .funnel_abf import Funnel_ABF
+from .funnel_sabf import Funnel_SpectralABF
 from .harmonic_bias import HarmonicBias
 from .metad import Metadynamics
 from .restraints import CVRestraints
@@ -74,6 +76,9 @@ from .spline_string import SplineString
 from .umbrella_integration import UmbrellaIntegration
 from .unbiased import Unbiased
 from .utils import (
+    Funnel_Logger,
+    Funnel_MetadLogger,
+    CVLogger,
     HistogramLogger,
     MetaDLogger,
     ReplicasConfiguration,

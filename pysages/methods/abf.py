@@ -296,5 +296,6 @@ def analyze(result: Result[ABF], **kwargs):
     for each attribute.
     """
     topology = kwargs.get("topology", (8, 8))
-    _result = _analyze(result, GradientLearning(), topology)
+    raw = kwargs.get("raw", False)
+    _result = _analyze(result, GradientLearning(), topology, raw)
     return numpyfy_vals(_result)

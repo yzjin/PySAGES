@@ -42,7 +42,7 @@ class GradientLearning(AnalysisStrategy):
 
 
 @dispatch
-def _analyze(result: Result, strategy: GradientLearning, topology):
+def _analyze(result: Result, strategy: GradientLearning, topology, raw=False):
     """
     Computes the free energy from the result of an `ABF`-based run.
     Integrates the forces via a gradient learning strategy.
@@ -141,10 +141,12 @@ def _analyze(result: Result, strategy: GradientLearning, topology):
 
         def fes_fn(x):
             params = pack(nn.params, layout)
+            if raw:
+                return model.apply(params, x)
             A = nn.std * model.apply(params, x) + nn.mean
             return A.max() - A
 
-        return jit(fes_fn)
+        return jit(fes_fn), nn.mean, nn.std
 
     def average_forces(hist, Fsum):
         shape = (*Fsum.shape[:-1], 1)
@@ -154,14 +156,17 @@ def _analyze(result: Result, strategy: GradientLearning, topology):
     mean_forces = []
     free_energies = []
     fes_fns = []
+    datameans, datastds = [], []
 
     # We transpose the data for convenience when plotting
     transpose = grid_transposer(grid)
     d = mesh.shape[-1]
 
     for state in states:
-        fes_fn = build_fes_fn(state)
+        fes_fn, datamean, datastd = build_fes_fn(state)
         hists.append(transpose(state.hist))
+        datameans.append(datamean)
+        datastds.append(datastd)
         mean_forces.append(transpose(average_forces(state.hist, state.Fsum)))
         free_energies.append(transpose(fes_fn(mesh)))
         fes_fns.append(fes_fn)
@@ -172,4 +177,6 @@ def _analyze(result: Result, strategy: GradientLearning, topology):
         "free_energy": first_or_all(free_energies),
         "fes_fn": first_or_all(fes_fns),
         "mesh": transpose(mesh).reshape(-1, d).squeeze(),
+        "mean": first_or_all(datameans),
+        "std": first_or_all(datastds)
     }
