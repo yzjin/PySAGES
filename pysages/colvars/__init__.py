@@ -12,6 +12,7 @@ PySAGES with your own.
 
 from .angles import Angle, DihedralAngle
 from .coordinates import Component, Displacement, Distance
+from .funnels import Projection_on_Axis_mobile
 from .shape import (
     Acylindricity,
     Asphericity,
@@ -20,6 +21,15 @@ from .shape import (
     ShapeAnisotropy,
 )
 from .utils import get_periods, wrap
+from .coordinationPBC_custom import CoordinationPBC, CombinedCoordinationPBC, CombinedCoordinationPBCDiff, CoordinationPBCMax
+from .rMSD_Kabsch import RMSD_Kabsch
+from .vac808num import Vac808num
+from .cvDistCollectiveVariable import CvDistCollectiveVariable
+from .cvNumCollectiveVariable import CvNumCollectiveVariable
+from .distancedifference import DistanceDifference
+from .proton_path_cv_nopbc import WhitelistProtonCV
+from .znOSwitchCV2 import ZnO12SwitchCV, ZnOContactMassCV
+from .alloy_colvar import EthaneDehydroCV, Coordnum
 
 # Conditionally export GeM if both `jax_md` and `jaxopt` are available
 try:
