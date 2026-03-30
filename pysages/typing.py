@@ -8,7 +8,10 @@ This module defines the types to used for dispatch or as type hints.
 from importlib import import_module
 
 import jax
-import jaxlib.xla_extension as xe
+try:
+    import jaxlib.xla_extension as xe
+except ModuleNotFoundError:
+    import jax.lib.xla_extension as xe
 
 from pysages._compat import _jax_version_tuple, _plum_version_tuple
 
