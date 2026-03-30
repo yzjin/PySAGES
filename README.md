@@ -21,6 +21,10 @@
     <a href="https://github.com/SSAGESLabs/PySAGES/actions/workflows/trunk.yml" target="_blank">
       <img src="https://github.com/SSAGESLabs/PySAGES/actions/workflows/trunk.yml/badge.svg?branch=main" alt="Trunk">
     </a>
+    &nbsp;
+    <a href="https://doi.org/10.1038/s41524-023-01189-z" target="_blank">
+      <img src="https://img.shields.io/badge/DOI-10.1038%2Fs41524--023--01189--z-blue" alt="Cite PySAGES">
+    </a>
   </p>
 </h1>
 
@@ -77,4 +81,4 @@ page](https://docs.trunk.io/docs).
 <!-- References -->
 
 [Colab Badge]: https://colab.research.google.com/assets/colab-badge.svg
-[Install Notebook]: https://colab.research.google.com/github/SSAGESLabs/PySAGES/blob/main/examples/Install_PySAGES_Environment.ipynb
+[Install Notebook]: https://colab.research.google.com/github/SSAGESLabs/PySAGES/blob/main/examples/Installing_a_PySAGES_Environment.ipynb

@@ -71,6 +71,7 @@ from .funnel_sabf import Funnel_SpectralABF
 from .harmonic_bias import HarmonicBias
 from .metad import Metadynamics
 from .restraints import CVRestraints
+from .sirens import Sirens
 from .spectral_abf import SpectralABF
 from .spline_string import SplineString
 from .umbrella_integration import UmbrellaIntegration

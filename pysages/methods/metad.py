@@ -64,7 +64,7 @@ class MetadynamicsState(NamedTuple):
     grid_potential: Optional[JaxArray]
     grid_gradient: Optional[JaxArray]
     idx: int
-    ncalls: int
+    ncalls: int = 0
 
     def __repr__(self):
         return repr("PySAGES" + type(self).__name__)
@@ -181,7 +181,7 @@ def _metadynamics(method, snapshot, helpers):
             grid_gradient = np.zeros((*shape, shape.size), dtype=np.float64)
 
         return MetadynamicsState(
-            xi, bias, heights, centers, sigmas, grid_potential, grid_gradient, 0, 0
+            xi, bias, heights, centers, sigmas, grid_potential, grid_gradient, 0
         )
 
     def update(state, data):
@@ -233,7 +233,7 @@ def build_gaussian_accumulator(method: Metadynamics):
         update_grids = jit(lambda *args: (None, None))
         should_deposit = jit(lambda pred, _: pred)
     else:
-        grid_mesh = (compute_mesh(grid) + 1) * (grid.size / 2) + grid.lower
+        grid_mesh = compute_mesh(grid)
         get_grid_index = build_indexer(grid)
         # Reshape so the dimensions are compatible
         accum = jit(lambda total, val: total + val.reshape(total.shape))

@@ -30,6 +30,7 @@ from pysages.backends.snapshot import (
 from pysages.typing import Callable, Optional
 from pysages.utils import copy, identity
 
+kConversionFactor = {"real": 2390.0573615334906, "metal": 1.0364269e-4, "electron": 1.06657236}
 kDefaultLocation = dlext.kOnHost if not hasattr(ExecutionSpace, "kOnDevice") else dlext.kOnDevice
 
 
@@ -39,15 +40,17 @@ class Sampler(FixDLExt):  # pylint: disable=R0902
 
     Parameters
     ----------
-    context: ``lammps.core.lammps``
-        The LAMMPS simulation instance to which the PySAGES sampling
-        machinery will be hooked.
-    sampling_method: ``SamplingMethod``
+
+    context: lammps.core.lammps
+        The LAMMPS simulation instance to which the PySAGES sampling machinery will be hooked.
+
+    sampling_method: pysages.methods.SamplingMethod
         The sampling method used.
-    callbacks: ``Optional[Callback]``
-        An optional callback. Some methods define one for logging,
-        but it can also be user-defined.
-    location: ``lammps.dlext.ExecutionSpace``
+
+    callbacks: Optional[Callback]
+        An optional callback. Some methods define one for logging, but it can also be user-defined.
+
+    location: lammps.dlext.ExecutionSpace
         Device where the simulation data will be retrieved.
     """
 
@@ -63,8 +66,8 @@ class Sampler(FixDLExt):  # pylint: disable=R0902
         self.location = location
         self.view = LAMMPSView(context)
 
-        helpers, restore, bias = build_helpers(context, sampling_method, on_gpu, pbs.restore)
         initial_snapshot = self.take_snapshot()
+        helpers, restore, bias = build_helpers(context, sampling_method, on_gpu, pbs.restore)
         _, initialize, method_update = sampling_method.build(initial_snapshot, helpers)
 
         self.callback = callback
@@ -89,14 +92,15 @@ class Sampler(FixDLExt):  # pylint: disable=R0902
         velocities = from_dlpack(dlext.velocities(self.view, self.location))
         forces = from_dlpack(dlext.forces(self.view, self.location))
         tags_map = from_dlpack(dlext.tags_map(self.view, self.location))
-        imgs = from_dlpack(dlext.images(self.view, self.location))
+        images = from_dlpack(dlext.images(self.view, self.location))
 
         masses = None
         if include_masses:
             masses = from_dlpack(dlext.masses(self.view, self.location))
         vel_mass = (velocities, (masses, types))
+        extras = dict(images=images)
 
-        return Snapshot(positions, vel_mass, forces, tags_map, imgs, None, None)
+        return Snapshot(positions, vel_mass, forces, tags_map, None, None, extras)
 
     def _update_snapshot(self):
         s = self._partial_snapshot()
@@ -106,7 +110,7 @@ class Sampler(FixDLExt):  # pylint: disable=R0902
         box = self._update_box()
         dt = self.snapshot.dt
 
-        return Snapshot(s.positions, vel_mass, s.forces, s.ids[1:], s.images, box, dt)
+        return Snapshot(s.positions, vel_mass, s.forces, s.ids[1:], box, dt, s.extras)
 
     def restore(self, prev_snapshot):
         """Replaces this sampler's snapshot with `prev_snapshot`."""
@@ -119,7 +123,7 @@ class Sampler(FixDLExt):  # pylint: disable=R0902
         dt = get_timestep(self.context)
 
         return Snapshot(
-            copy(s.positions), copy(s.vel_mass), copy(s.forces), s.ids[1:], copy(s.images), box, dt
+            copy(s.positions), copy(s.vel_mass), copy(s.forces), s.ids[1:], box, dt, copy(s.extras)
         )
 
 
@@ -129,6 +133,10 @@ def build_helpers(context, sampling_method, on_gpu, restore_fn):
     """
     utils = importlib.import_module(".utils", package="pysages.backends")
     dim = context.extract_setting("dimension")
+    units = context.extract_global("units")
+    factor = kConversionFactor.get(units)
+
+    to_force_units = identity if factor is None else (lambda x: factor * x)
 
     # Depending on the device being used we need to use either cupy or numpy
     # (or numba) to generate a view of jax's DeviceArrays
@@ -140,6 +148,16 @@ def build_helpers(context, sampling_method, on_gpu, restore_fn):
 
         def sync_forces():
             pass
+
+    def restore_vm(view, snapshot, prev_snapshot):
+        velocities = view(snapshot.vel_mass[0])
+        masses_types = snapshot.vel_mass[1]
+        masses = view(masses_types[0])
+        types = view(masses_types[1])
+        prev_masses_types = prev_snapshot.vel_mass[1]
+        velocities[:] = view(prev_snapshot.vel_mass[0])
+        masses[:] = view(prev_masses_types[0])
+        types[:] = view(prev_masses_types[1])
 
     # TODO: check if this can be sped up.  # pylint: disable=W0511
     def bias(snapshot, state):
@@ -153,8 +171,10 @@ def build_helpers(context, sampling_method, on_gpu, restore_fn):
 
     snapshot_methods = build_snapshot_methods(sampling_method, on_gpu)
     flags = sampling_method.snapshot_flags
-    restore = partial(restore_fn, view)
-    helpers = HelperMethods(build_data_querier(snapshot_methods, flags), lambda: dim)
+    restore = partial(restore_fn, view, restore_vm=restore_vm)
+    helpers = HelperMethods(
+        build_data_querier(snapshot_methods, flags), lambda: dim, to_force_units
+    )
 
     return helpers, restore, bias
 
@@ -179,7 +199,7 @@ def build_snapshot_methods(sampling_method, on_gpu):
 
         def positions(snapshot):
             L = np.diag(snapshot.box.H)
-            return snapshot.positions[:, :3] + L * vmap(unpack)(snapshot.images)
+            return snapshot.positions[:, :3] + L * vmap(unpack)(snapshot.extras["images"])
 
     else:
 
@@ -233,7 +253,6 @@ def bind(sampling_context: SamplingContext, callback: Optional[Callable], **kwar
     context = sampling_context.context
     sampling_method = sampling_context.method
     sampler = Sampler(context, sampling_method, callback)
-    sampling_context.view = sampler.view
     sampling_context.run = lambda n, **kwargs: context.command(f"run {n}")
 
     # We want to support backends that also are context managers as long

@@ -70,7 +70,7 @@ class ANNState(NamedTuple):
     phi: JaxArray
     prob: JaxArray
     nn: NNData
-    ncalls: int
+    ncalls: int = 0
 
     def __repr__(self):
         return repr("PySAGES " + type(self).__name__)
@@ -120,7 +120,7 @@ class ANN(NNSamplingMethod):
         default_optimizer = LevenbergMarquardt(reg=L2Regularization(1e-6))
         self.optimizer = kwargs.get("optimizer", default_optimizer)
 
-    def build(self, snapshot, helpers):
+    def build(self, snapshot, helpers, *_args, **_kwargs):
         return _ann(self, snapshot, helpers)
 
 
@@ -148,14 +148,14 @@ def _ann(method: ANN, snapshot, helpers):
         phi = np.zeros(shape)
         prob = np.ones(shape)
         nn = NNData(ps, np.array(0.0), np.array(1.0))
-        return ANNState(xi, bias, hist, phi, prob, nn, 0)
+        return ANNState(xi, bias, hist, phi, prob, nn)
 
     def update(state, data):
         ncalls = state.ncalls + 1
         in_training_regime = ncalls > train_freq
         # We only train every `train_freq` timesteps
         in_training_step = in_training_regime & (ncalls % train_freq == 1)
-        hist, phi, prob, nn = learn_free_energy(state, in_training_step)
+        hist, prob, phi, nn = learn_free_energy(state, in_training_step)
         # Compute the collective variable and its jacobian
         xi, Jxi = cv(data)
         I_xi = get_grid_index(xi)
@@ -182,7 +182,7 @@ def build_free_energy_learner(method: ANN):
     model = method.model
 
     # Training data
-    inputs = (compute_mesh(grid) + 1) * grid.size / 2 + grid.lower
+    inputs = compute_mesh(grid)
     smoothing_kernel = blackman_kernel(dims, 7)
     padding = "wrap" if grid.is_periodic else "edge"
     conv = partial(convolve, kernel=smoothing_kernel, boundary=padding)
@@ -208,10 +208,10 @@ def build_free_energy_learner(method: ANN):
         #
         hist = np.zeros_like(state.hist)
         #
-        return hist, phi, prob, nn
+        return hist, prob, phi, nn
 
     def skip_learning(state):
-        return state.hist, state.phi, state.prob, state.nn
+        return state.hist, state.prob, state.phi, state.nn
 
     def _learn_free_energy(state, in_training_step):
         return cond(in_training_step, learn_free_energy, skip_learning, state)
@@ -241,7 +241,7 @@ def build_force_estimator(method: ANN):
         params = pack(nn.params, layout)
         return nn.std * f64(model_grad(params, f32(x)).flatten())
 
-    def zero_force(data):
+    def zero_force(_data):
         return np.zeros(dims)
 
     def estimate_force(xi, I_xi, nn, in_training_regime):
@@ -282,10 +282,9 @@ def analyze(result: Result[ANN]):
     """
 
     method = result.method
-    states = result.states
 
     grid = method.grid
-    mesh = (compute_mesh(grid) + 1) * grid.size / 2 + grid.lower
+    mesh = compute_mesh(grid)
     model = method.model
     _, layout = unpack(model.parameters)
 
@@ -306,7 +305,7 @@ def analyze(result: Result[ANN]):
     transpose = grid_transposer(grid)
     d = mesh.shape[-1]
 
-    for s in states:
+    for s in result.states:
         histograms.append(transpose(s.hist))
         free_energies.append(transpose(s.phi.max() - s.phi))
         nns.append(s.nn)

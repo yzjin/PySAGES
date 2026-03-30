@@ -10,6 +10,8 @@ import test_simulations.abf as abf_example
 import pysages
 import pysages.colvars
 import pysages.methods
+from pysages.backends.snapshot import Box
+from pysages.serialization import CompatUnpickler
 
 pi = np.pi
 
@@ -81,6 +83,12 @@ METHODS_ARGS = {
     "SpectralABF": {
         "cvs": [pysages.colvars.Component([0], 0), pysages.colvars.Component([0], 1)],
         "grid": pysages.Grid(lower=(1, 1), upper=(5, 5), shape=(32, 32)),
+    },
+    "Sirens": {
+        "cvs": [pysages.colvars.Component([0], 0), pysages.colvars.Component([0], 1)],
+        "grid": pysages.Grid(lower=(1, 1), upper=(5, 5), shape=(32, 32)),
+        "topology": (14,),
+        "mode": "abf",
     },
     "HistogramLogger": {
         "period": 1,
@@ -192,3 +200,26 @@ def test_pickle_results():
     assert np.all(test_result.states[0].Fsum == tmp_result.states[0].Fsum).item()
 
     tmp_file.unlink()
+
+
+def test_pickle_backward_compatibility():
+    path = pathlib.Path(__file__).parent
+
+    with open(path / "unbiased_state-v0.4.pickle", "rb") as f:
+        unpickler = CompatUnpickler(f)
+        state = unpickler.load()
+        assert state.ncalls == 0
+
+    with open(path / "snapshot-v0.5.pickle", "rb") as f:
+        unpickler = CompatUnpickler(f)
+        snapshot = unpickler.load()
+        assert isinstance(snapshot.box, Box)
+        assert snapshot.dt == 1.0
+        assert "images" in snapshot.extras
+
+    with open(path / "snapshot_no_images-v0.5.pickle", "rb") as f:
+        unpickler = CompatUnpickler(f)
+        snapshot = unpickler.load()
+        assert isinstance(snapshot.box, Box)
+        assert snapshot.dt == 1.0
+        assert snapshot.extras is None

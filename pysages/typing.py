@@ -8,10 +8,6 @@ This module defines the types to used for dispatch or as type hints.
 from importlib import import_module
 
 import jax
-try:
-    import jaxlib.xla_extension as xe
-except ModuleNotFoundError:
-    import jax.lib.xla_extension as xe
 
 from pysages._compat import _jax_version_tuple, _plum_version_tuple
 
@@ -19,7 +15,9 @@ from pysages._compat import _jax_version_tuple, _plum_version_tuple
 
 # https://github.com/google/jax/releases/tag/jax-v0.4.1
 if _jax_version_tuple < (0, 4, 1):
+    xe = import_module("jaxlib.xla_extension")
     JaxArray = xe.DeviceArray
+    del xe
 else:
     JaxArray = jax.Array
 
@@ -37,7 +35,9 @@ else:
 # Typing aliases
 Any = _typing.Any
 Callable = _typing.Callable
+Dict = _typing.Dict
 List = _typing.List
+Iterable = _typing.Iterable
 NamedTuple = _typing.NamedTuple
 Optional = _typing.Optional
 Sequence = _typing.Sequence
@@ -50,7 +50,6 @@ Scalar = Union[None, bool, int, float]
 
 # Remove namespace noise
 del jax
-del xe
 del import_module
 del _jax_version_tuple
 del _plum_version_tuple
